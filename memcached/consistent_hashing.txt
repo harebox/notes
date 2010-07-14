@@ -1,5 +1,9 @@
 Consistent Hashing
+==================
 source : http://www.lexemetech.com/2007/11/consistent-hashing.html
+
+written by Tom White (Cloudera)
+translated by Hoonmin Kim
 
 1.
 - 최초 아이디어
@@ -24,7 +28,91 @@ source : http://www.lexemetech.com/2007/11/consistent-hashing.html
 
 4.
 - 기본 아이디어
-  > 같은 해시 함수(hash function)를 이용하여 객체와 캐시를 함께 해시한다.
+  > 같은 해시 함수(hash function)를 이용하여 객체와 캐시를 함께 해싱한다.
 - 이유
   > 객체 해시의 개수를 담게 될 구간(an interval)에 캐시를 매핑시키기 위해.
   > 만약 캐시가 제거 된다면, 해달 캐시의 구간은 인접한 구간의 캐시가 인계받게 되고 다른 캐시는 변하지 않는다.
+
+5.
+- 한번 자세히 살펴보자.
+- 해시 함수는 실제로 객체와 캐시를 특정 숫자 범위에 매핑시킨다.
+  > 예: 자바에서는 Object#hashCode 메소드가 [-231:231-1] 범위의 integer 값을 반환한다.
+- 이 숫자 범위를 원에 매핑시킨다고 생각해보자.
+http://2.bp.blogspot.com/_IhqEHw4_Ick/Rz9cjSPnAEI/AAAAAAAAAA4/hc2tot8SWVw/s400/consistent_hashing_1.png
+http://4.bp.blogspot.com/_IhqEHw4_Ick/Rz9cwyPnAFI/AAAAAAAAABA/aW5zxmOIIN0/s400/consistent_hashing_2.png
+객체 번호(1, 2, 3, 4), 캐시(A, B, C)
+  > 한 객체가 어떤 캐시에 들어가야 할 지 찾기 위해, 캐시를 만날 때까지 원을 시계 방향으로 돌린다.
+  > 위 그림에서는 (1, 4)->A, (2)->B, (3)->C 로 매핑된다.
+  > 이 상황에서 C가 제거된다고 생각하면, (1, 4, 3)->A 으로 매핑이 변경되고 다른 것은 변하지 않는다.
+  > 이 때 캐시 D가 1과 4 사이에 추가되면, (1)->A, (3, 4)->D 로 변경될 것이다.
+
+6.
+- 이 방식은 잘 동작하지만, 각 캐시에 지정된 구간(interval)의 크기가 상당히 애매하다(hit and miss).
+- 구간 크기는 기본적으로 랜덤하기 때문에 캐시 사이의 객체들이 심한 비정규 분포를 보일 가능성이 있다.
+- 이 문제를 해결하기 위한 방법
+  > 가상 노드(virtual node) 적용 : 원 안에 있는 캐시 점들의 복사본을 두자.
+  
+7.
+- 가상 노드의 효과
+  > http://1.bp.blogspot.com/_IhqEHw4_Ick/Rz9daCPnAGI/AAAAAAAAABI/xjtbuG8Knx0/s1600-h/ch-graph.png
+    * 위 그래프는 캐시 10개, 객체 10,000개를 이용한 시뮬레이션 결과임.
+    * X축 : 캐시점들의 복사본 개수 (logarithmic scale)
+  > 복사본 개수가 작을 경우 : 캐시 사이의 객체 분포가 균형잡혀 있지 않다.
+	* 캐시 당 평균 객체 개수에 대한 표준편차 값이 높음.
+  > 복사본 개수를 늘릴 경우 : 캐시 사이의 객체 분포가 균형잡혀간다.
+  > 이 실험에서는 100개나 200개의 복사본이 괜찮은 균형을 보여주었다. (표준편차 약 5~10%)
+
+8.
+- 구현
+import java.util.Collection;
+import java.util.SortedMap;
+import java.util.TreeMap;
+
+public class ConsistentHash<T> {
+	private final HashFunction hashFunction;
+	private final int numberOfReplicas;
+	private final SortedMap<Integer, T> circle = new TreeMap<Integer, T>();
+
+	public ConsistentHash(HashFunction hashFunction, int numberOfReplicas,
+			Collection<T> nodes) {
+		this.hashFunction = hashFunction;
+		this.numberOfReplicas = numberOfReplicas;
+		for (T node : nodes) {
+			add(node);
+		}
+	}
+
+	public void add(T node) {
+		for (int i = 0; i < numberOfReplicas; i++) {
+			circle.put(hashFunction.hash(node.toString() + i), node);
+		}
+	}
+
+	public void remove(T node) {
+		for (int i = 0; i < numberOfReplicas; i++) {
+			circle.remove(hashFunction.hash(node.toString() + i));
+		}
+	}
+
+	public T get(Object key) {
+		if (circle.isEmpty()) {
+			return null;
+		}
+		int hash = hashFunction.hash(key);
+		if (!circle.containsKey(hash)) {
+			SortedMap<Integer, T> tailMap = circle.tailMap(hash);
+			hash = tailMap.isEmpty() ? circle.firstKey() : tailMap.firstKey();
+		}
+		return circle.get(hash);
+	}
+}
+
+9.
+- 그럼 어떻게 consistent hashing을 사용해야 할까?
+- 라이브러리
+  > memcached clients
+    * Last.fm's ketama (Richard Jones) : http://www.audioscrobbler.net/development/ketama
+    * spymemcached (Dustin Sallings) : http://bleu.west.spy.net/~dustin/projects/memcached
+  > Chord (분산 해시 테이블)
+    * http://pdos.csail.mit.edu/chord
+  > Amazon's Dynamo (key-value 저장소)
