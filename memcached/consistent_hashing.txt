@@ -1,0 +1,30 @@
+Consistent Hashing
+source : http://www.lexemetech.com/2007/11/consistent-hashing.html
+
+1.
+- 최초 아이디어
+  > Consistent Hashing and Random Trees: Distributed Caching Protocols for Relieving Hot Spots on the World Wide Web by David Karger et al.
+- 10년 전의 아이디어지만 현재 주요 서비스들에 사용되고 있다.
+  > Amazon Dynamo, memcached 등.
+
+2.
+- 여러 대의 캐시 장비를 운영할 때 경험한 한계로 인해 consistent hashing에 대한 요구가 부상하였다.
+- n 대의 캐시 장비 사이의 부하 분산을 위해 사용하는 일반적인 방법.
+  > 객체 o를 (hash(o) mod n)번 캐시 장비에 삽입(put).
+  > 어떤 이유로 캐시 장비를 추가/제거 할 경우, 모든 객체가 재배치 되어야 하는 문제가 있다.
+  > 이는 대재앙이 될 수 있는데, 캐시가 갑자기 사라진 것 처럼 원본 서버로 캐시 서버들의 요청이 한번에 쇄도할 것이기 때문이다.
+- 이러한 사태를 방지하기 위해 consistent hashing이 필요하다.
+
+3.
+- 그러므로 다음과 같은 상황이 좋을 것이다.
+  > 캐시 장비가 추가될 때, 다른 모든 캐시 장비로 부터 객체를 고르게 분배 받는다.
+  > 캐시 장비가 제거될 때, 나머지 캐시 장비들이 제거될 장비의 객체를 고르게 나누어 가진다.
+- 이것이 바로 consistent hashing이 하는 일이다.
+  > 적어도 동일한 캐시 장비에 객체를 가능한한 균등하게(consistently) 매핑한다.
+
+4.
+- 기본 아이디어
+  > 같은 해시 함수(hash function)를 이용하여 객체와 캐시를 함께 해시한다.
+- 이유
+  > 객체 해시의 개수를 담게 될 구간(an interval)에 캐시를 매핑시키기 위해.
+  > 만약 캐시가 제거 된다면, 해달 캐시의 구간은 인접한 구간의 캐시가 인계받게 되고 다른 캐시는 변하지 않는다.
